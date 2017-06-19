@@ -1,9 +1,4 @@
 # -*- coding: utf-8 -*-
-"""
-Created on Thu Jun 15 12:28:40 2017
-
-@author: insta
-"""
 
 import sys
 from numpy import NaN, Inf, arange, isscalar, asarray, array
