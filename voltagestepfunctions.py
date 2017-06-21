@@ -10,6 +10,7 @@ Created on Tue Jun 13 16:24:12 2017
 import easygui
 import numpy as np
 import pandas as pd
+import scipy.sparse.linalg as linalg
 import scipy.sparse as sparse
 from peakdet import peakdet
 import sys
@@ -38,6 +39,8 @@ def workbooktoarray():
     df = df.values
     return df
 
+
+
 def backgroundSubtract(fluorarray):
     #generate a linear regression of the background, which is assumed to be column 3 of the array. column 1 is assumed to be timepoints.
     bgarray = fluorarray[:,[0,2]]
@@ -60,7 +63,7 @@ def baseline_als(y, lam, p, niter=20):
     for i in range(niter):
         W = sparse.spdiags(w, 0, L, L)
         Z = W + lam * D.dot(D.transpose())
-        z = sparse.linalg.spsolve(Z, w*y)
+        z = linalg.spsolve(Z, w*y)
         w = p * (y > z) + (1-p) * (y < z)
     return z
 
