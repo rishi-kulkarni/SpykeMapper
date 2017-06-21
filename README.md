@@ -1,7 +1,9 @@
 # SPykemapper
 Tools for analyzing voltage imaging data.
 
-NOTE: Might have to run ROIExtractor.py in command line rather than in iPython. 
+By running main.py, SPykemapper will ask for a TIFF input, allow you to draw an ROI around the cell and background, and then copy to clipboard the deltaF/F values for the trace after background subtraction and bleach correction. 
+
+Runs best from command line (navigate terminal to folder, type "python main.py" to start script").
 
 
 # To do:
