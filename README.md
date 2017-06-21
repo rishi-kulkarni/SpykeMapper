@@ -1,6 +1,8 @@
 # SPykemapper
 Tools for analyzing voltage imaging data.
 
+NOTE: Might have to run ROIExtractor.py in command line rather than in iPython. 
+
 
 # To do:
 Import TIF and draw ROIs rather than Excel files.
