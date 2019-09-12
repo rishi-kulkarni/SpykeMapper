@@ -1,12 +1,15 @@
 # SPykemapper
 Tools for analyzing voltage imaging data.
 
-By running main.py, SPykemapper will ask for a TIFF input, allow you to draw an ROI around the cell and background, and then copy to clipboard the deltaF/F values for the trace after background subtraction and bleach correction. 
-
-Runs best from command line (navigate terminal to folder, type "python main.py" to start script").
+This set of scripts takes an excel spreadsheet of raw voltage data as an input and outputs a variety of analyses, including separation of subthreshold and spiking behavior, pairwise cross-correlation between each trace, and a spike-triggered average using the subthreshold activity as the "input."
 
 
 # To do:
+
+Add Factor Analysis to the main script. 
+
+Create a GUI for selecting what analyses you'd like to perform (performing all of them can be CPU intensive as the output files get rather large).
+
 Import TIF and draw ROIs rather than Excel files.
   
 * Using imported TIF, use first frame OR supplied brightfield image for drawing ROIs
