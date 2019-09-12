@@ -1,4 +1,4 @@
-# SPykemapper
+# SpykeMapper
 Tools for analyzing voltage imaging data.
 
 This set of scripts takes an excel spreadsheet of raw voltage data as an input and outputs a variety of analyses, including separation of subthreshold and spiking behavior, pairwise cross-correlation between each trace, and a spike-triggered average using the subthreshold activity as the "input."
