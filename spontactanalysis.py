@@ -14,6 +14,11 @@ import pandas as pd
 import os
 import easygui
 import itertools
+import sklearn
+import sklearn.preprocessing
+from sklearn.decomposition import FactorAnalysis
+from factor_analyzer import FactorAnalyzer
+
 
 def workbooktoDF():
     #Find the path to a .xlsx via a GUI fileopen box 
@@ -69,18 +74,44 @@ def pairwise_cc(baseline):
         cross_corr_lag[cell1-1,cell2-1] = corr_lag
     return cross_corr_matrix, cross_corr_lag
 
+def factor_analysis(baseline):
+    norm_base = np.copy(baseline)
+    norm_base[:,1:] = sklearn.preprocessing.StandardScaler().fit_transform(norm_base[:,1:])
+    #these commands copy the baseline array and scales the data that isn't part of the x-axis
+    factor = FactorAnalyzer(n_factors=3,rotation=None)
+    factor.fit(norm_base[:,1:])
+    eigenvalues = factor.get_eigenvalues()
+    variance = factor.get_factor_variance()
+    communalities = factor.get_communalities()
+    loadings = factor.loadings_
+    transform = factor.transform(norm_base[:,1:])
+    outputFA = pd.DataFrame(data=transform,columns=["Factor 1","Factor 2","Factor 3"])
+    outputFA["Eigenvalues (Raw) (index is factor #)"] = pd.Series(eigenvalues[0])
+    outputFA["Eigenvalues (Common Factor)"] = pd.Series(eigenvalues[1])
+    outputFA["Factor 1 Loadings (index is cell #)"] = pd.Series(loadings[:,0])
+    outputFA["Factor 2 Loadings"] = pd.Series(loadings[:,1])
+    outputFA["Factor 3 Loadings"] = pd.Series(loadings[:,2])
+    outputFA["Communalities"] = pd.Series(communalities)
+    outputFA["Proportional Explained Variance (index is factor #)"] = pd.Series(variance[1])
+    return outputFA
+
+    
+
 rawDF = workbooktoDF()
 for key in rawDF:
     folder, outputfile = os.path.split(filename)
     rawdata = rawDF[key].values
+    for i in range(1,np.ma.size(rawdata,1)):
+        rawdata[:,i] = rawdata[:,i] - VI.baseline_als(rawdata[:,i], 100000000,0.001)    
+    #this corrects out any linear photobleaching, which is important for some dyes
     baseline = np.copy(rawdata)
     spikes = np.copy(rawdata)
-
+    
     for i in range(1,np.ma.size(baseline,1)):
         actionpotentials = VI.spikesHighPass(spikes[:,i])
         fitted = VI.baseline_als(baseline[:,i], 10000,0.01)
         baseline[:,i] = fitted
-        spikes[:,i] = spikes[:,i]/fitted
+        spikes[:,i] = spikes[:,i] - fitted
 
     dSpikes = np.copy(spikes)
     dSpikes = VI.digitizeSpikes(dSpikes)
@@ -88,6 +119,7 @@ for key in rawDF:
     BaseNormal = VI.deltaF(BaseNormal)
     RasterSpikes = np.copy(spikes)
     RasterSpikes = VI.RasterSpikes(RasterSpikes)
+    FactorAnalysisDF = factor_analysis(baseline)
     if key != "Concatenated":
         cross_corr_matrix, cross_corr_lag = pairwise_cc(baseline)
     
@@ -108,6 +140,7 @@ for key in rawDF:
         BaseNormalDF.to_excel(writer, sheet_name="Baseline_Normalized")
         spikesDF.to_excel(writer, sheet_name="Spikes_Filtered")
         dSpikesDF.to_excel(writer,sheet_name="Spike Train")
+        FactorAnalysisDF.to_excel(writer,sheet_name="Factor Analysis")
         if key != "Concatenated":
             cross_corr_matrix.to_excel(writer,sheet_name="Baseline_CC_R_Values")
             cross_corr_lag.to_excel(writer,sheet_name="Baseline_CC_Time_Lags")
