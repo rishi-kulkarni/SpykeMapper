@@ -34,7 +34,7 @@ def workbooktoDF():
 def spike_triggered_baseline(normalized_baseline, spiketrain):
     #this function takes a continuous baseline function and a digitized spike train and outputs a matrix consisting of the time points +/- t on the baseline from each of the spikes in the spike train. It normalizes the added values to be dF/F values.
     t = 150 #this is the number of frames away from the spike the function will average
-    spike_trigger_baseline = np.zeros((2*t,1))
+    spike_trigger_baseline = np.zeros((2*t,len(spiketrain[0,:])))
     spike_trigger_baseline[:,0] = np.arange(-t,t)
     markers = np.asarray(np.where(spiketrain == 1))
     markers = markers[:,markers[0]>t]
@@ -42,8 +42,9 @@ def spike_triggered_baseline(normalized_baseline, spiketrain):
     for cellnum in range(1, np.max(markers[1])+1):
         indices = np.where(markers[1] == cellnum)
         for spiketime in markers[:,indices[0]][0]:
-            toadd = (normalized_baseline[(spiketime-t):(spiketime+t),cellnum])/np.mean(normalized_baseline[:,cellnum])
-            spike_trigger_baseline = np.hstack((spike_trigger_baseline, toadd.reshape(-1,1)))
+            toadd = (normalized_baseline[(spiketime-t):(spiketime+t),cellnum])
+            spike_trigger_baseline[:,cellnum] = spike_trigger_baseline[:,cellnum] + toadd
+        np.divide(spike_trigger_baseline[:,cellnum],(np.count_nonzero((markers[1,:] == cellnum))), out=spike_trigger_baseline[:,cellnum], where=(np.count_nonzero((markers[1,:] == cellnum)))!=0)
     return spike_trigger_baseline
             
 def spike_triggered_average(sta_matrix):
@@ -101,8 +102,8 @@ rawDF = workbooktoDF()
 for key in rawDF:
     folder, outputfile = os.path.split(filename)
     rawdata = rawDF[key].values
-    for i in range(1,np.ma.size(rawdata,1)):
-        rawdata[:,i] = rawdata[:,i] - VI.baseline_als(rawdata[:,i], 100000000,0.001)    
+    #for i in range(1,np.ma.size(rawdata,1)):
+        #rawdata[:,i] = rawdata[:,i]/VI.baseline_als(rawdata[:,i], 100000000,0.001)    
     #this corrects out any linear photobleaching, which is important for some dyes
     baseline = np.copy(rawdata)
     spikes = np.copy(rawdata)
@@ -111,7 +112,7 @@ for key in rawDF:
         actionpotentials = VI.spikesHighPass(spikes[:,i])
         fitted = VI.baseline_als(baseline[:,i], 10000,0.01)
         baseline[:,i] = fitted
-        spikes[:,i] = spikes[:,i] - fitted
+        spikes[:,i] = spikes[:,i] / fitted
 
     dSpikes = np.copy(spikes)
     dSpikes = VI.digitizeSpikes(dSpikes)
@@ -120,6 +121,7 @@ for key in rawDF:
     RasterSpikes = np.copy(spikes)
     RasterSpikes = VI.RasterSpikes(RasterSpikes)
     FactorAnalysisDF = factor_analysis(baseline)
+    STA = spike_triggered_baseline(BaseNormal,dSpikes)
     if key != "Concatenated":
         cross_corr_matrix, cross_corr_lag = pairwise_cc(baseline)
     
@@ -127,6 +129,7 @@ for key in rawDF:
     BaseNormalDF = pd.DataFrame(data=BaseNormal, index = rawdata[:,0], columns = rawDF[key].columns)
     spikesDF = pd.DataFrame(data=spikes, index = rawdata[:,0], columns = rawDF[key].columns)
     dSpikesDF = pd.DataFrame(data=dSpikes, index = rawdata[:,0], columns = rawDF[key].columns)
+    STADF = pd.DataFrame(data=STA, index = STA[:,0], columns = rawDF[key].columns)
     if key != "Concatenated":
         cross_corr_matrix = pd.DataFrame(data=cross_corr_matrix, index = rawDF[key].columns[1:], columns = rawDF[key].columns[1:])
         cross_corr_lag = pd.DataFrame(data=cross_corr_lag, index = rawDF[key].columns[1:], columns = rawDF[key].columns[1:])
@@ -140,6 +143,7 @@ for key in rawDF:
         BaseNormalDF.to_excel(writer, sheet_name="Baseline_Normalized")
         spikesDF.to_excel(writer, sheet_name="Spikes_Filtered")
         dSpikesDF.to_excel(writer,sheet_name="Spike Train")
+        STADF.to_excel(writer,sheet_name="Spike-Triggered Average")
         FactorAnalysisDF.to_excel(writer,sheet_name="Factor Analysis")
         if key != "Concatenated":
             cross_corr_matrix.to_excel(writer,sheet_name="Baseline_CC_R_Values")
