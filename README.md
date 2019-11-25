@@ -6,7 +6,6 @@ This set of scripts takes an excel spreadsheet of raw voltage data as an input a
 
 # To do:
 
-Add Factor Analysis to the main script. 
 
 Create a GUI for selecting what analyses you'd like to perform (performing all of them can be CPU intensive as the output files get rather large).
 
@@ -22,7 +21,5 @@ User-inputted adjustments to the baseline fit (less important for neuronal activ
 
 * Four sliders (or two, if looking at neurons). 
 * If user wants, apply correction from one trace to all traces if batch processing
-
-Improved Spike Detection
 
 * Ideas?
