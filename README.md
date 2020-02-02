@@ -1,8 +1,8 @@
 # SpykeMapper
-Tools for analyzing voltage imaging data.
+This is a Python module to analyze voltage imaging data in a variety of ways, including but not limited to subthreshold waveform extraction, spike-triggered averaging, pairwise cross-correlation, and factor analysis (courtesy of the FactorAnalyzer package). It includes a class for importing and processing voltage imaging data, which is assumed to be in the form of an Excel workbook where the first column is fime and the remaining columns are raw data from individual cells. 
 
-This set of scripts takes an excel spreadsheet of raw voltage data as an input and outputs a variety of analyses, including separation of subthreshold and spiking behavior, pairwise cross-correlation between each trace, and a spike-triggered average using the subthreshold activity as the "input."
-
+# Description
+Voltage imaging enables collection of "intracellular" electrophysiology data from several cells at once. Separating this data into subthreshold waveforms and spike trains allows a researcher to infer several properties of the measured neurons that are inaccessible or challenging to study with classical, electrode-based techniques. 
 
 # To do:
 
@@ -23,3 +23,12 @@ User-inputted adjustments to the baseline fit (less important for neuronal activ
 * If user wants, apply correction from one trace to all traces if batch processing
 
 * Ideas?
+
+# Requirements:
+* Python 3.4 or higher
+* numpy
+* pandas
+* scipy
+* scikit-learn
+* FactorAnalyzer
+* easygui (will try to remove this dependency at some point)
