@@ -1,15 +1,22 @@
+import voltagestepfunctions as VI
+import seaborn as sns; sns.set()
 import numpy as np
 import pandas as pd
 import os
+import easygui
 import easygui
 import numpy as np
 import pandas as pd
 import scipy.sparse.linalg as linalg
 import scipy.sparse as sparse
+from peakdet import peakdet
 import sys
 from numpy import NaN, Inf, arange, isscalar, asarray, array
+from scipy.signal import butter, lfilter
+from scipy.signal import freqs
 import scipy.signal as signal
 import scipy
+import matplotlib.pyplot as plt
 import itertools
 import sklearn
 import copy
@@ -18,7 +25,25 @@ import threading
 import time 
 import sklearn.preprocessing
 from factor_analyzer import FactorAnalyzer
+from numba import njit, jit
 
+
+def baseline_als(y, lam, p, niter=5):
+    L = len(y)
+    D = sparse.diags([1,-2,1],[0,-1,-2], shape=(L,L-2))
+    D = lam * D.dot(D.transpose()) # Precompute this term since it does not depend on `w`
+    w = np.ones(L)
+    W = sparse.spdiags(w, 0, L, L)
+    for i in range(niter):
+        W.setdiag(w) # Do not create a new matrix, just update diagonal values
+        Z = W + D
+        z = linalg.spsolve(Z, w*y)
+        w = p * (y > z) + (1-p) * (y < z)
+    return z
+
+def fit_column(dfColumn, lam = 5000, weight = 0.01, niter=10):
+    fitted = baseline_als(dfColumn, lam, weight, niter)
+    return fitted
 
 def threaded(fn):
     def wrapper(*args, **kwargs):
@@ -40,36 +65,28 @@ def workbooktoDF():
     print(t1-t0)
     return df
 
-def baseline_als(y, lam, p, niter=10):
-    L = len(y)
-    D = sparse.diags([1,-2,1],[0,-1,-2], shape=(L,L-2))
-    D = lam * D.dot(D.transpose()) # Precompute this term since it does not depend on `w`
-    w = np.ones(L)
-    W = sparse.spdiags(w, 0, L, L)
-    for i in range(niter):
-        W.setdiag(w) # Do not create a new matrix, just update diagonal values
-        Z = W + D
-        z = linalg.spsolve(Z, w*y)
-        w = p * (y > z) + (1-p) * (y < z)
-    return z
-
 def digitizeSpikes(spikearray):
     #this function will convert the filtered spikes to a 0-1 spike train, effectively digitizing the data
-    digitize_spikes = np.zeros_like(spikearray) #this makes an array of 0s that will look like the input array
-    for cellnum in range(0,np.ma.size(spikearray,1)):
-        threshold = 4.5*np.average(np.min(np.std(rolling_window(spikearray[:,cellnum],250),axis=-1))) + np.median(np.median(rolling_window(spikearray[:,cellnum],500),axis=-1))
-        above_thresh = np.where(spikearray[:,cellnum] > threshold)
-        maxima = signal.argrelextrema(spikearray[:,cellnum], np.greater, order=2)
-        spike_index = np.intersect1d(maxima, above_thresh)
-        for index in spike_index:
-            digitize_spikes[index,cellnum] = 1
-    return digitize_spikes
+    thresh = 4.5*(pd.Series(spikearray).rolling(250).std().min()) +  pd.Series(spikearray).rolling(500).median().median()
+    above_thresh = np.where(spikearray > thresh)
+    maxima = signal.argrelextrema(spikearray, np.greater, order = 2)
+    spike_index = np.intersect1d(maxima, above_thresh)
+    spiketrain = np.copy(spikearray)
+    spiketrain[spike_index] = 1
+    spiketrain = (spiketrain == 1).astype(int)
+    return spiketrain
 
 def deltaF(baseline):
     for i in range(0,np.ma.size(baseline,1)):
         MaxFluor = np.mean(baseline[:,i])
         baseline[:,i] = np.divide(baseline[:,i],MaxFluor)
     return baseline
+
+def plotBaseline(BaseNormal):
+    #This function graphs the baseline values of all the cells in the BaseNormal array with an offset. The resting membrane potential is normalized to some value between 0 and 1 for ease of visualization.
+    for i in range(0,np.ma.size(BaseNormal,0)-1):
+        plt.plot(BaseNormal.index, i + ((BaseNormal.values[:,i]-np.min(BaseNormal.values[:,i]))/(np.max(BaseNormal.values[:,i]) - np.min(BaseNormal.values[:,i]))), label='baseline',)
+    plt.xlim(0,np.ma.size(BaseNormal.index))
     
 def spike_triggered_baseline(normalized_baseline, spiketrain):
     #this function takes a continuous baseline function and a digitized spike train and outputs a matrix consisting of the time points +/- t on the baseline from each of the spikes in the spike train. It normalizes the added values to be dF/F values.
@@ -95,6 +112,19 @@ def rolling_window(a, window):
     strides = a.strides + (a.strides[-1],)
     return np.lib.stride_tricks.as_strided(a, shape=shape, strides=strides)
 
+def generate_ISI(spiketrain, subthresh):      
+    ISI = []
+    ISI_baseline = []
+    for i in range(0,len(spiketrain.values[0,:])):
+        for j in range(0,np.ma.size(np.where(spiketrain.iloc[:,i])[0])-1):
+            ISI_baseline = np.append(ISI_baseline, np.mean(subthresh.iloc[np.where(spiketrain.iloc[:,i])[0][j]:np.where(spiketrain.iloc[:,i])[0][j+1],i]))
+        ISI_add = np.diff(np.where(spiketrain.iloc[:,i]))
+        #ISI_baseline = np.delete(ISI_baseline, -1, 0)
+        ISI = np.append(ISI,ISI_add)
+    return ISI, ISI_baseline
+
+    
+    
 class VoltageTraceData:
     
         def __init__(self):
@@ -105,54 +135,32 @@ class VoltageTraceData:
             print(datatype)
             if datatype == "Excel":
                 self.RawData = workbooktoDF()
-            self.SubThreshold = copy.deepcopy(self.RawData)
-            self.Spikes = copy.deepcopy(self.RawData)
-            
-        @threaded  
-        def preprocess(self, lam=5000, weight=0.01):
-            for i in range(0,np.ma.size(self.SubThreshold.values,1)):
-                fitted = baseline_als(self.SubThreshold.values[:,i], lam, weight)
-                self.SubThreshold[self.SubThreshold.columns.get_level_values(0)[i],self.SubThreshold.columns.get_level_values(1)[i]] = fitted
-                self.Spikes[self.Spikes.columns.get_level_values(0)[i],self.Spikes.columns.get_level_values(1)[i]] = self.Spikes[self.Spikes.columns.get_level_values(0)[i],self.Spikes.columns.get_level_values(1)[i]].values / fitted
-        
-        @threaded  
-        def detrend(self, lam=1000000000000, weight=0.5):
-            self.SubThresh_Stationary = copy.deepcopy(self.NormSubThresh)
-            for i in range(0,np.ma.size(self.SubThresh_Stationary.values,1)):
-                fitted = baseline_als(self.SubThresh_Stationary.values[:,i], lam, weight)
-                self.SubThresh_Stationary[self.SubThresh_Stationary.columns.get_level_values(0)[i],self.SubThresh_Stationary.columns.get_level_values(1)[i]] = self.SubThresh_Stationary[self.SubThresh_Stationary.columns.get_level_values(0)[i],self.SubThresh_Stationary.columns.get_level_values(1)[i]] - fitted + 1      
-        
-        
-        @threaded            
+
+        def process_raw(self, smooth=5000, weight = 0.01, iterat=10):
+            self.SubThreshold = self.RawData.transform(baseline_als, axis=0, raw=True, lam = smooth, p = weight, niter=iterat)
+            self.Spikes = self.RawData.divide(self.SubThreshold, axis="columns")
+   
         def make_spiketrain(self):
-            self.SpikeTrain = copy.deepcopy(self.Spikes)
-            for key in self.SpikeTrain.columns.unique(level=0):
-                self.SpikeTrain[key] = digitizeSpikes(self.SpikeTrain[key].values)
+            self.SpikeTrain = self.Spikes.transform(digitizeSpikes, axis=0, raw=True)
                 
-                
-        @threaded
         def normalize_subthreshold(self):
-            self.NormSubThresh = copy.deepcopy(self.SubThreshold)
-            for key in self.NormSubThresh.columns.unique(level=0):
-                self.NormSubThresh[key] = deltaF(self.NormSubThresh[key].values)
+            self.NormSubThresh = self.SubThreshold.divide(self.SubThreshold.mean(axis=0))
              
-        @threaded
         def gen_STA(self):
             self.STA = self.NormSubThresh.copy(deep=True)
             self.STA = self.STA.iloc[:300]
             self.STA[:] = spike_triggered_baseline(self.NormSubThresh.values, self.SpikeTrain.values)
             self.STA.values[self.STA.values == 0] = np.nan
         
-        @threaded
         def FactorAnalyze(self, rotate='varimax'):
-            self.SharedVariance = copy.deepcopy(self.SubThresh_Stationary)
+            self.SharedVariance = copy.deepcopy(self.NormSubThresh)
             self.SharedVariance = self.SharedVariance.iloc[:1]
             self.SharedVariance.index.rename('Shared Variance', inplace=True)
-            self.FactorLoadings = copy.deepcopy(self.SubThresh_Stationary)
+            self.FactorLoadings = copy.deepcopy(self.NormSubThresh)
             self.FactorLoadings = self.FactorLoadings.iloc[:3]
             self.FactorLoadings.index.rename('Factor Number', inplace=True)
             for key in self.SharedVariance.columns.unique(level=0):
                 factor = FactorAnalyzer(n_factors=3,rotation=rotate)
-                factor.fit(self.SubThresh_Stationary[key].values)
+                factor.fit(sklearn.preprocessing.StandardScaler().fit_transform(self.NormSubThresh[key].values))
                 self.SharedVariance[key] = np.atleast_2d(factor.get_communalities())
                 self.FactorLoadings[key] = factor.loadings_.T
