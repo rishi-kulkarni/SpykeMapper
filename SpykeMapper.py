@@ -67,7 +67,7 @@ def workbooktoDF():
 
 def digitizeSpikes(spikearray):
     #this function will convert the filtered spikes to a 0-1 spike train, effectively digitizing the data
-    thresh = 4.5*(pd.Series(spikearray).rolling(250).std().min()) +  pd.Series(spikearray).rolling(500).median().median()
+    thresh = 6*(pd.Series(spikearray).rolling(250).std().min()) +  pd.Series(spikearray).rolling(500).median().median()
     above_thresh = np.where(spikearray > thresh)
     maxima = signal.argrelextrema(spikearray, np.greater, order = 2)
     spike_index = np.intersect1d(maxima, above_thresh)
@@ -135,6 +135,21 @@ class VoltageTraceData:
             print(datatype)
             if datatype == "Excel":
                 self.RawData = workbooktoDF()
+
+        def preprocess_data(self):
+            self.process_raw()
+            self.normalize_subthreshold()
+            self.make_spiketrain()
+
+        def subtract_bg(self):
+            if 'BG' in self.RawData.columns.levels[1]:
+                for key in self.RawData.columns.unique(level=0):
+                    BGfit = baseline_als(self.RawData[key]['BG'], 1000000000,0.5)
+                    self.RawData[key] = self.RawData[key].drop(columns='BG')
+                    self.RawData[key] = self.RawData[key] - BGfit[:,None]
+                self.RawData = self.RawData.dropna(axis=1)
+            else:
+                print("No BG trace!")
 
         def process_raw(self, smooth=5000, weight = 0.01, iterat=10):
             self.SubThreshold = self.RawData.transform(baseline_als, axis=0, raw=True, lam = smooth, p = weight, niter=iterat)
